@@ -39,7 +39,7 @@ Second adds regional heterogeneity (excitation-inhibition balance) as described 
 """
 
 import numpy
-from numba import guvectorize, float64
+from numba import guvectorize, float64, njit, prange
 from tvb.basic.neotraits.api import NArray, Final, List, Range
 from tvb.simulator.models.base import ModelNumbaDfun
 
@@ -62,6 +62,35 @@ def _numba_dfun(S, c, ae, be, de, ge, te, wp, we, jn, ai, bi, di, gi, ti, wi, ji
     h = x / (1 - numpy.exp(-di[0]*x))
     dx[1] = - (S[1] / ti[0]) + h * gi[0]
 
+
+@njit(fastmath=True, cache=True)
+def _fast_ww_dfun(x, c, local_coupling,
+                  ae, be, de, ge, te, wp, we, jn,
+                  ai, bi, di, gi, ti, wi, ji,
+                  g, l, io, ie, deriv):
+    n_nodes = x.shape[1]
+
+    for i in range(n_nodes):
+        s_e = x[0, i, 0]
+        s_i = x[1, i, 0]
+        c_val = c[0, i, 0]
+
+        cc = g * jn * (c_val + local_coupling * s_e)
+        jn_se = jn * s_e
+
+        # Excitatory population
+        x_e = wp * jn_se - ji * s_i + we * io + cc + ie
+        x_e = ae * x_e - be
+        h_e = x_e / (1.0 - numpy.exp(-de * x_e))
+        deriv[0, i, 0] = - (s_e / te) + (1.0 - s_e) * h_e * ge
+
+        # Inhibitory population
+        x_i = jn_se - s_i + wi * io + l * cc
+        x_i = ai * x_i - bi
+        h_i = x_i / (1.0 - numpy.exp(-di * x_i))
+        deriv[1, i, 0] = - (s_i / ti) + h_i * gi
+
+    return deriv
 
 class ReducedWongWangExcInh(ModelNumbaDfun):
     r"""
@@ -231,9 +260,16 @@ class ReducedWongWangExcInh(ModelNumbaDfun):
     cvar = numpy.array([0], dtype=numpy.int32)
 
     def configure(self):
-        """  """
         super(ReducedWongWangExcInh, self).configure()
         self.update_derived_parameters()
+        self._deriv_buffer = None
+
+
+
+    # def configure(self):
+    #     """  """
+    #     super(ReducedWongWangExcInh, self).configure()
+    #     self.update_derived_parameters() this is the original function
 
     def _numpy_dfun(self, state_variables, coupling, local_coupling=0.0):
         S = state_variables[:, :]
@@ -266,31 +302,17 @@ class ReducedWongWangExcInh(ModelNumbaDfun):
         return derivative
 
     def dfun(self, x, c, local_coupling=0.0, **kwargs):
-        r"""
-        Equations taken from [DPA_2013]_ , page 11242
+        if self._deriv_buffer is None or self._deriv_buffer.shape != x.shape:
+            self._deriv_buffer = numpy.empty_like(x)
 
-        .. math::
-                 x_{ek}       &=   w_p\,J_N \, S_{ek} - J_iS_{ik} + W_eI_o + GJ_N \mathbf\Gamma(S_{ek}, S_{ej}, u_{kj}) \\
-                 H(x_{ek})    &=  \dfrac{a_ex_{ek}- b_e}{1 - \exp(-d_e(a_ex_{ek} -b_e))} \\
-                 \dot{S}_{ek} &= -\dfrac{S_{ek}}{\tau_e} + (1 - S_{ek}){\gamma}H(x_{ek}) \\
-
-                 x_{ik}       &=   J_N \, S_{ek} - S_{ik} + W_iI_o + {\lambda}GJ_N \mathbf\Gamma(S_{ik}, S_{ej}, u_{kj}) \\
-                 H(x_{ik})    &=  \dfrac{a_ix_{ik} - b_i}{1 - \exp(-d_i(a_ix_{ik} -b_i))} \\
-                 \dot{S}_{ik} &= -\dfrac{S_{ik}}{\tau_i} + \gamma_iH(x_{ik}) \\
-
-        """
-        x_ = x.reshape(x.shape[:-1]).T
-        c_ = c.reshape(c.shape[:-1]).T + local_coupling * x[0]
-        deriv = _numba_dfun(x_, c_,
-                            self.a_e, self.b_e, self.d_e, self.gamma_e, self.tau_e,
-                            self.w_p, self.W_e, self.J_N,
-                            self.a_i, self.b_i, self.d_i, self.gamma_i, self.tau_i,
-                            self.W_i, self.J_i,
-                            self.G, self.lamda, self.I_o, self.I_ext)
-        return deriv.T[..., numpy.newaxis]
-
-
-
+        return _fast_ww_dfun(x, c, float(local_coupling),
+                             float(self.a_e[0]), float(self.b_e[0]), float(self.d_e[0]),
+                             float(self.gamma_e[0]), float(self.tau_e[0]), float(self.w_p[0]),
+                             float(self.W_e[0]), float(self.J_N[0]), float(self.a_i[0]),
+                             float(self.b_i[0]), float(self.d_i[0]), float(self.gamma_i[0]),
+                             float(self.tau_i[0]), float(self.W_i[0]), float(self.J_i[0]),
+                             float(self.G[0]), float(self.lamda[0]), float(self.I_o[0]),
+                             float(self.I_ext[0]), self._deriv_buffer)
 
 
 @guvectorize([(float64[:],)*23], '(n),(m)' + ',()'*20 + '->(n)', nopython=True)
