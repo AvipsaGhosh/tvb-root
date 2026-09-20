@@ -28,6 +28,7 @@
 Models developed by Stefanescu-Jirsa, based on reduced-set analyses of infinite populations.
 
 """
+
 import numpy
 from scipy.integrate import trapezoid as scipy_integrate_trapz
 from scipy.stats import norm as scipy_stats_norm
@@ -43,11 +44,19 @@ class ReducedSetBase(Model):
     def configure(self):
         super(ReducedSetBase, self).configure()
         if numpy.mod(self.nv, self.number_of_modes):
-            raise ValueError("nv (%d) must be divisible by the number_of_modes (%d), nu mod n_mode = %d",
-                             self.nv, self.number_of_modes, self.nv % self.number_of_modes)
+            raise ValueError(
+                "nv (%d) must be divisible by the number_of_modes (%d), nu mod n_mode = %d",
+                self.nv,
+                self.number_of_modes,
+                self.nv % self.number_of_modes,
+            )
         if numpy.mod(self.nu, self.number_of_modes):
-            raise ValueError("nu (%d) must be divisible by the number_of_modes (%d), nu mod n_mode = %d",
-                             self.nu, self.number_of_modes, self.nu % self.number_of_modes)
+            raise ValueError(
+                "nu (%d) must be divisible by the number_of_modes (%d), nu mod n_mode = %d",
+                self.nu,
+                self.number_of_modes,
+                self.nu % self.number_of_modes,
+            )
         self.update_derived_parameters()
 
 import numba
@@ -135,62 +144,73 @@ class ReducedSetFitzHughNagumo(ReducedSetBase):
         label=r":math:`\tau`",
         default=numpy.array([3.0]),
         domain=Range(lo=1.5, hi=4.5, step=0.01),
-        doc="""doc...(prob something about timescale seperation)""")
+        doc="""doc...(prob something about timescale seperation)""",
+    )
 
     a = NArray(
         label=":math:`a`",
         default=numpy.array([0.45]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""doc...""")
+        doc="""doc...""",
+    )
 
     b = NArray(
         label=":math:`b`",
         default=numpy.array([0.9]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""doc...""")
+        doc="""doc...""",
+    )
 
     K11 = NArray(
         label=":math:`K_{11}`",
         default=numpy.array([0.5]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Internal coupling, excitatory to excitatory""")
+        doc="""Internal coupling, excitatory to excitatory""",
+    )
 
     K12 = NArray(
         label=":math:`K_{12}`",
         default=numpy.array([0.15]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Internal coupling, inhibitory to excitatory""")
+        doc="""Internal coupling, inhibitory to excitatory""",
+    )
 
     K21 = NArray(
         label=":math:`K_{21}`",
         default=numpy.array([0.15]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Internal coupling, excitatory to inhibitory""")
+        doc="""Internal coupling, excitatory to inhibitory""",
+    )
 
     sigma = NArray(
         label=r":math:`\sigma`",
         default=numpy.array([0.35]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Standard deviation of Gaussian distribution""")
+        doc="""Standard deviation of Gaussian distribution""",
+    )
 
     mu = NArray(
         label=r":math:`\mu`",
         default=numpy.array([0.0]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Mean of Gaussian distribution""")
+        doc="""Mean of Gaussian distribution""",
+    )
 
     # Used for phase-plane axis ranges and to bound random initial() conditions.
     state_variable_range = Final(
         label="State Variable ranges [lo, hi]",
-        default={"xi": numpy.array([-4.0, 4.0]),
-                 "eta": numpy.array([-3.0, 3.0]),
-                 "alpha": numpy.array([-4.0, 4.0]),
-                 "beta": numpy.array([-3.0, 3.0])},
+        default={
+            "xi": numpy.array([-4.0, 4.0]),
+            "eta": numpy.array([-3.0, 3.0]),
+            "alpha": numpy.array([-4.0, 4.0]),
+            "beta": numpy.array([-3.0, 3.0]),
+        },
         doc="""The values for each state-variable should be set to encompass
         the expected dynamic range of that state-variable for the current
         parameters, it is used as a mechanism for bounding random inital
         conditions when the simulation isn't started from an explicit history,
-        it is also provides the default range of phase-plane plots.""")
+        it is also provides the default range of phase-plane plots.""",
+    )
 
     variables_of_interest = List(
         of=str,
@@ -200,9 +220,10 @@ class ReducedSetFitzHughNagumo(ReducedSetBase):
         doc=r"""This represents the default state-variables of this Model to be
                 monitored. It can be overridden for each Monitor if desired. The
                 corresponding state-variable indices for this model are :math:`\xi = 0`,
-                :math:`\eta = 1`, :math:`\alpha = 2`, and :math:`\beta= 3`.""")
+                :math:`\eta = 1`, :math:`\alpha = 2`, and :math:`\beta= 3`.""",
+    )
 
-    state_variables = tuple('xi eta alpha beta'.split())
+    state_variables = tuple("xi eta alpha beta".split())
     _nvar = 4
     cvar = numpy.array([0, 2], dtype=numpy.int32)
     # Derived parameters
@@ -215,6 +236,32 @@ class ReducedSetFitzHughNagumo(ReducedSetBase):
     II_i = None
     m_i = None
     n_i = None
+
+    dfun_mode = "combined"
+    coupling_terms = ["c_xi", "c_alpha"]
+    parameter_names = ["tau", "a", "b", "K11", "K12", "K21", "sigma", "mu"]
+    derived_matrix_names = [
+        "Aik",
+        "Bik",
+        "Cik",
+        "e_i",
+        "f_i",
+        "IE_i",
+        "II_i",
+        "m_i",
+        "n_i",
+    ]
+    derived_matrix_ops = [
+        ("Axi", "Aik", "xi"),
+        ("Balpha", "Bik", "alpha"),
+        ("Cxi", "Cik", "xi"),
+    ]
+    state_variable_dfuns = {
+        "xi": "tau * (xi_{m} - e_i_{m} * xi_{m}**3 / nb.float32(3.0) - eta_{m}) + K11 * (Axi_{m} - xi_{m}) - K12 * (Balpha_{m} - xi_{m}) + tau * (IE_i_{m} + c_xi_{m})",
+        "eta": "nb.float32(1.0) / tau * (xi_{m} - b * eta_{m} + m_i_{m})",
+        "alpha": "tau * (alpha_{m} - f_i_{m} * alpha_{m}**3 / nb.float32(3.0) - beta_{m}) + K21 * (Cxi_{m} - alpha_{m}) + tau * (II_i_{m} + c_xi_{m})",
+        "beta": "nb.float32(1.0) / tau * (alpha_{m} - b * beta_{m} + n_i_{m})",
+    }
 
     def dfun(self, state_variables, coupling, local_coupling=0.0):
         xi = state_variables[0, :]
@@ -259,8 +306,8 @@ class ReducedSetFitzHughNagumo(ReducedSetBase):
         nu_per_mode = self.nu // self.number_of_modes
 
         for i in range(self.number_of_modes):
-            V[i, i * nv_per_mode:(i + 1) * nv_per_mode] = numpy.ones(nv_per_mode)
-            U[i, i * nu_per_mode:(i + 1) * nu_per_mode] = numpy.ones(nu_per_mode)
+            V[i, i * nv_per_mode : (i + 1) * nv_per_mode] = numpy.ones(nv_per_mode)
+            U[i, i * nu_per_mode : (i + 1) * nu_per_mode] = numpy.ones(nu_per_mode)
 
         # Normalise the modes
         V = V / numpy.tile(numpy.sqrt(trapz(V * V, Zv, axis=1)), (self.nv, 1)).T
@@ -278,21 +325,19 @@ class ReducedSetFitzHughNagumo(ReducedSetBase):
         intcVdZ = trapz(cV, Zv, axis=1)[:, newaxis]
         intG1VdZ = trapz(G1 * V, Zv, axis=1)[newaxis, :]
         intcUdZ = trapz(cU, Zu, axis=1)[:, newaxis]
-        # import pdb; pdb.set_trace()
         # Calculate coefficients
         self.Aik = numpy.dot(intcVdZ, intG1VdZ).T
         self.Bik = numpy.dot(intcVdZ, trapz(G2 * U, Zu, axis=1)[newaxis, :])
         self.Cik = numpy.dot(intcUdZ, intG1VdZ).T
 
-        self.e_i = trapz(cV * V ** 3, Zv, axis=1)[newaxis, :]
-        self.f_i = trapz(cU * U ** 3, Zu, axis=1)[newaxis, :]
+        self.e_i = trapz(cV * V**3, Zv, axis=1)[newaxis, :].squeeze()
+        self.f_i = trapz(cU * U**3, Zu, axis=1)[newaxis, :].squeeze()
 
-        self.IE_i = trapz(Zv * cV, Zv, axis=1)[newaxis, :]
-        self.II_i = trapz(Zu * cU, Zu, axis=1)[newaxis, :]
+        self.IE_i = trapz(Zv * cV, Zv, axis=1)[newaxis, :].squeeze()
+        self.II_i = trapz(Zu * cU, Zu, axis=1)[newaxis, :].squeeze()
 
-        self.m_i = (self.a * intcVdZ).T
-        self.n_i = (self.a * intcUdZ).T
-        # import pdb; pdb.set_trace()
+        self.m_i = (self.a * intcVdZ).T.squeeze()
+        self.n_i = (self.a * intcUdZ).T.squeeze()
 
 @numba.njit(fastmath=True, cache=True)
 def _hr_dfun(xi, eta, tau, alpha, beta, gamma, c_0, local_coupling,
@@ -391,88 +436,103 @@ class ReducedSetHindmarshRose(ReducedSetBase):
         label=":math:`r`",
         default=numpy.array([0.006]),
         domain=Range(lo=0.0, hi=0.1, step=0.0005),
-        doc="""Adaptation parameter""")
+        doc="""Adaptation parameter""",
+    )
 
     a = NArray(
         label=":math:`a`",
         default=numpy.array([1.0]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""")
+        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""",
+    )
 
     b = NArray(
         label=":math:`b`",
         default=numpy.array([3.0]),
         domain=Range(lo=0.0, hi=3.0, step=0.01),
-        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""")
+        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""",
+    )
 
     c = NArray(
         label=":math:`c`",
         default=numpy.array([1.0]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""")
+        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""",
+    )
 
     d = NArray(
         label=":math:`d`",
         default=numpy.array([5.0]),
         domain=Range(lo=2.5, hi=7.5, step=0.01),
-        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""")
+        doc="""Dimensionless parameter as in the Hindmarsh-Rose model""",
+    )
 
     s = NArray(
         label=":math:`s`",
         default=numpy.array([4.0]),
         domain=Range(lo=2.0, hi=6.0, step=0.01),
-        doc="""Adaptation paramters, governs feedback""")
+        doc="""Adaptation paramters, governs feedback""",
+    )
 
     xo = NArray(
         label=":math:`x_{o}`",
         default=numpy.array([-1.6]),
         domain=Range(lo=-2.4, hi=-0.8, step=0.01),
-        doc="""Leftmost equilibrium point of x""")
+        doc="""Leftmost equilibrium point of x""",
+    )
 
     K11 = NArray(
         label=":math:`K_{11}`",
         default=numpy.array([0.5]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Internal coupling, excitatory to excitatory""")
+        doc="""Internal coupling, excitatory to excitatory""",
+    )
 
     K12 = NArray(
         label=":math:`K_{12}`",
         default=numpy.array([0.1]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Internal coupling, inhibitory to excitatory""")
+        doc="""Internal coupling, inhibitory to excitatory""",
+    )
 
     K21 = NArray(
         label=":math:`K_{21}`",
         default=numpy.array([0.15]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Internal coupling, excitatory to inhibitory""")
+        doc="""Internal coupling, excitatory to inhibitory""",
+    )
 
     sigma = NArray(
         label=r":math:`\sigma`",
         default=numpy.array([0.3]),
         domain=Range(lo=0.0, hi=1.0, step=0.01),
-        doc="""Standard deviation of Gaussian distribution""")
+        doc="""Standard deviation of Gaussian distribution""",
+    )
 
     mu = NArray(
         label=r":math:`\mu`",
         default=numpy.array([3.3]),
         domain=Range(lo=1.1, hi=3.3, step=0.01),
-        doc="""Mean of Gaussian distribution""")
+        doc="""Mean of Gaussian distribution""",
+    )
 
     # Used for phase-plane axis ranges and to bound random initial() conditions.
     state_variable_range = Final(
         label="State Variable ranges [lo, hi]",
-        default={"xi": numpy.array([-4.0, 4.0]),
-                 "eta": numpy.array([-25.0, 20.0]),
-                 "tau": numpy.array([2.0, 10.0]),
-                 "alpha": numpy.array([-4.0, 4.0]),
-                 "beta": numpy.array([-20.0, 20.0]),
-                 "gamma": numpy.array([2.0, 10.0])},
+        default={
+            "xi": numpy.array([-4.0, 4.0]),
+            "eta": numpy.array([-25.0, 20.0]),
+            "tau": numpy.array([2.0, 10.0]),
+            "alpha": numpy.array([-4.0, 4.0]),
+            "beta": numpy.array([-20.0, 20.0]),
+            "gamma": numpy.array([2.0, 10.0]),
+        },
         doc="""The values for each state-variable should be set to encompass
         the expected dynamic range of that state-variable for the current
         parameters, it is used as a mechanism for bounding random inital
         conditions when the simulation isn't started from an explicit history,
-        it is also provides the default range of phase-plane plots.""")
+        it is also provides the default range of phase-plane plots.""",
+    )
 
     variables_of_interest = List(
         of=str,
@@ -483,15 +543,16 @@ class ReducedSetHindmarshRose(ReducedSetBase):
                 monitored. It can be overridden for each Monitor if desired. The
                 corresponding state-variable indices for this model are :math:`\xi = 0`,
                 :math:`\eta = 1`, :math:`\tau = 2`, :math:`\alpha = 3`,
-                :math:`\beta = 4`, and :math:`\gamma = 5`""")
+                :math:`\beta = 4`, and :math:`\gamma = 5`""",
+    )
 
-    state_variables = 'xi eta tau alpha beta gamma'.split()
+    state_variables = "xi eta tau alpha beta gamma".split()
     _nvar = 6
     cvar = numpy.array([0, 3], dtype=numpy.int32)
     # derived parameters
-    A_ik = None
-    B_ik = None
-    C_ik = None
+    Aik = None
+    Bik = None
+    Cik = None
     a_i = None
     b_i = None
     c_i = None
@@ -504,6 +565,53 @@ class ReducedSetHindmarshRose(ReducedSetBase):
     II_i = None
     m_i = None
     n_i = None
+
+    dfun_mode = "combined"
+    coupling_terms = ["c_xi", "c_alpha"]
+    parameter_names = [
+        "r",
+        "a",
+        "b",
+        "c",
+        "d",
+        "s",
+        "xo",
+        "K11",
+        "K12",
+        "K21",
+        "sigma",
+        "mu",
+    ]
+    derived_matrix_names = [
+        "Aik",
+        "Bik",
+        "Cik",
+        "a_i",
+        "b_i",
+        "c_i",
+        "d_i",
+        "e_i",
+        "f_i",
+        "h_i",
+        "p_i",
+        "IE_i",
+        "II_i",
+        "m_i",
+        "n_i",
+    ]
+    derived_matrix_ops = [
+        ("Axi", "Aik", "xi"),
+        ("Balpha", "Bik", "alpha"),
+        ("Cxi", "Cik", "xi"),
+    ]
+    state_variable_dfuns = {
+        "xi": "eta_{m} - a_i_{m} * xi_{m}**3 + b_i_{m} * xi_{m}**2 - tau_{m} + K11 * (Axi_{m} - xi_{m}) - K12 * (Balpha_{m} - xi_{m}) + IE_i_{m} + c_xi_{m}",
+        "eta": "c_i_{m} - d_i_{m} * xi_{m}**2 - eta_{m}",
+        "tau": "r * s * xi_{m} - r * tau_{m} - m_i_{m}",
+        "alpha": "beta_{m} - e_i_{m} * alpha_{m}**3 + f_i_{m} * alpha_{m}**2 - gamma_{m} + K21 * (Cxi_{m} - alpha_{m}) + II_i_{m} + c_xi_{m}",
+        "beta": "h_i_{m} - p_i_{m} * alpha_{m}**2 - beta_{m}",
+        "gamma": "r * s * alpha_{m} - r * gamma_{m} - n_i_{m}",
+    }
 
     def dfun(self, state_variables, coupling, local_coupling=0.0):
         xi = state_variables[0, :]
@@ -552,8 +660,8 @@ class ReducedSetHindmarshRose(ReducedSetBase):
         nu_per_mode = self.nu // self.number_of_modes
 
         for i in range(self.number_of_modes):
-            V[i, i * nv_per_mode:(i + 1) * nv_per_mode] = numpy.ones(nv_per_mode)
-            U[i, i * nu_per_mode:(i + 1) * nu_per_mode] = numpy.ones(nu_per_mode)
+            V[i, i * nv_per_mode : (i + 1) * nv_per_mode] = numpy.ones(nv_per_mode)
+            U[i, i * nu_per_mode : (i + 1) * nu_per_mode] = numpy.ones(nu_per_mode)
 
         # Normalise the modes
         V = V / numpy.tile(numpy.sqrt(trapz(V * V, Iv, axis=1)), (self.nv, 1)).T
@@ -568,20 +676,19 @@ class ReducedSetHindmarshRose(ReducedSetBase):
         cV = numpy.conj(V)
         cU = numpy.conj(U)
 
-        #import pdb; pdb.set_trace()
         intcVdI = trapz(cV, Iv, axis=1)[:, newaxis]
         intG1VdI = trapz(G1 * V, Iv, axis=1)[newaxis, :]
         intcUdI = trapz(cU, Iu, axis=1)[:, newaxis]
 
-        #Calculate coefficients
-        self.A_ik = numpy.dot(intcVdI, intG1VdI).T
-        self.B_ik = numpy.dot(intcVdI, trapz(G2 * U, Iu, axis=1)[newaxis, :])
-        self.C_ik = numpy.dot(intcUdI, intG1VdI).T
+        # Calculate coefficients
+        self.Aik = numpy.dot(intcVdI, intG1VdI).T
+        self.Bik = numpy.dot(intcVdI, trapz(G2 * U, Iu, axis=1)[newaxis, :])
+        self.Cik = numpy.dot(intcUdI, intG1VdI).T
 
-        self.a_i = self.a * trapz(cV * V ** 3, Iv, axis=1)[newaxis, :]
-        self.e_i = self.a * trapz(cU * U ** 3, Iu, axis=1)[newaxis, :]
-        self.b_i = self.b * trapz(cV * V ** 2, Iv, axis=1)[newaxis, :]
-        self.f_i = self.b * trapz(cU * U ** 2, Iu, axis=1)[newaxis, :]
+        self.a_i = self.a * trapz(cV * V**3, Iv, axis=1)[newaxis, :]
+        self.e_i = self.a * trapz(cU * U**3, Iu, axis=1)[newaxis, :]
+        self.b_i = self.b * trapz(cV * V**2, Iv, axis=1)[newaxis, :]
+        self.f_i = self.b * trapz(cU * U**2, Iu, axis=1)[newaxis, :]
         self.c_i = (self.c * intcVdI).T
         self.h_i = (self.c * intcUdI).T
 
@@ -590,8 +697,8 @@ class ReducedSetHindmarshRose(ReducedSetBase):
 
         if corrected_d_p:
             # correction identified by Shrey Dutta & Arpan Bannerjee, confirmed by RS
-            self.d_i = self.d * trapz(cV * V ** 2, Iv, axis=1)[newaxis, :]
-            self.p_i = self.d * trapz(cU * U ** 2, Iu, axis=1)[newaxis, :]
+            self.d_i = self.d * trapz(cV * V**2, Iv, axis=1)[newaxis, :]
+            self.p_i = self.d * trapz(cU * U**2, Iu, axis=1)[newaxis, :]
         else:
             # typo in the original paper by RS & VJ, kept for comparison purposes.
             self.d_i = (self.d * intcVdI).T
