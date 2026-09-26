@@ -342,11 +342,11 @@ class ReducedSetFitzHughNagumo(ReducedSetBase):
 @numba.njit(fastmath=True, cache=True)
 def _hr_dfun(xi, eta, tau, alpha, beta, gamma, c_0, local_coupling,
              a_i, b_i, c_i, d_i, e_i, f_i, h_i, p_i,
-             A_ik, B_ik, C_ik, IE_i, II_i, m_i, n_i,
+             Aik, Bik, Cik, IE_i, II_i, m_i, n_i,
              r, s, K11, K12, K21, deriv):
-    dot_xi_A = xi @ A_ik
-    dot_alpha_B = alpha @ B_ik
-    dot_xi_C = xi @ C_ik
+    dot_xi_A = xi @ Aik
+    dot_alpha_B = alpha @ Bik
+    dot_xi_C = xi @ Cik
 
     xi_sq = xi * xi
     alpha_sq = alpha * alpha

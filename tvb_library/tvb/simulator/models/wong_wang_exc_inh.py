@@ -70,27 +70,51 @@ def _fast_ww_dfun(x, c, local_coupling,
                   ae, be, de, ge, te, wp, we, jn,
                   ai, bi, di, gi, ti, wi, ji,
                   g, l, io, ie, deriv):
-    n_nodes = x.shape[1]
+    n_vars, n_nodes, n_modes = x.shape
 
-    for i in range(n_nodes):
-        s_e = x[0, i, 0]
-        s_i = x[1, i, 0]
-        c_val = c[0, i, 0]
+    for m in range(n_modes):
+        for i in range(n_nodes):
+            s_e = x[0, i, m]
+            s_i = x[1, i, m]
+            c_val = c[0, i, m]
 
-        cc = g * jn * (c_val + local_coupling * s_e)
-        jn_se = jn * s_e
+            # Support both scalar and node-heterogeneous 1D parameter arrays
+            _ae = ae[i] if ae.size > 1 else ae[0]
+            _be = be[i] if be.size > 1 else be[0]
+            _de = de[i] if de.size > 1 else de[0]
+            _ge = ge[i] if ge.size > 1 else ge[0]
+            _te = te[i] if te.size > 1 else te[0]
+            _wp = wp[i] if wp.size > 1 else wp[0]
+            _we = we[i] if we.size > 1 else we[0]
+            _jn = jn[i] if jn.size > 1 else jn[0]
 
-        # Excitatory population
-        x_e = wp * jn_se - ji * s_i + we * io + cc + ie
-        x_e = ae * x_e - be
-        h_e = x_e / (1.0 - numpy.exp(-de * x_e))
-        deriv[0, i, 0] = - (s_e / te) + (1.0 - s_e) * h_e * ge
+            _ai = ai[i] if ai.size > 1 else ai[0]
+            _bi = bi[i] if bi.size > 1 else bi[0]
+            _di = di[i] if di.size > 1 else di[0]
+            _gi = gi[i] if gi.size > 1 else gi[0]
+            _ti = ti[i] if ti.size > 1 else ti[0]
+            _wi = wi[i] if wi.size > 1 else wi[0]
+            _ji = ji[i] if ji.size > 1 else ji[0]
 
-        # Inhibitory population
-        x_i = jn_se - s_i + wi * io + l * cc
-        x_i = ai * x_i - bi
-        h_i = x_i / (1.0 - numpy.exp(-di * x_i))
-        deriv[1, i, 0] = - (s_i / ti) + h_i * gi
+            _g = g[i] if g.size > 1 else g[0]
+            _l = l[i] if l.size > 1 else l[0]
+            _io = io[i] if io.size > 1 else io[0]
+            _ie = ie[i] if ie.size > 1 else ie[0]
+
+            cc = _g * _jn * (c_val + local_coupling * s_e)
+            jn_se = _jn * s_e
+
+            # Excitatory population
+            x_e = _wp * jn_se - _ji * s_i + _we * _io + cc + _ie
+            x_e = _ae * x_e - _be
+            h_e = x_e / (1.0 - numpy.exp(-_de * x_e))
+            deriv[0, i, m] = - (s_e / _te) + (1.0 - s_e) * h_e * _ge
+
+            # Inhibitory population
+            x_i = jn_se - s_i + _wi * _io + _l * cc
+            x_i = _ai * x_i - _bi
+            h_i = x_i / (1.0 - numpy.exp(-_di * x_i))
+            deriv[1, i, m] = - (s_i / _ti) + h_i * _gi
 
     return deriv
 
@@ -384,11 +408,11 @@ class ReducedWongWangExcInh(ModelNumbaDfun):
     _nvar = 2
     cvar = numpy.array([0], dtype=numpy.int32)
 
+
     def configure(self):
         """ """
         super(ReducedWongWangExcInh, self).configure()
         self.update_derived_parameters()
-        self._deriv_buffer = None
 
 
     def _numpy_dfun(self, state_variables, coupling, local_coupling=0.0):
@@ -427,20 +451,37 @@ class ReducedWongWangExcInh(ModelNumbaDfun):
 
         return derivative
 
+
+
     def dfun(self, x, c, local_coupling=0.0, **kwargs):
-        if self._deriv_buffer is None or self._deriv_buffer.shape != x.shape:
-            self._deriv_buffer = numpy.empty_like(x)
+        # Ensure contiguous memory layout and allocate a clean derivative array per step
+        x_arr = numpy.ascontiguousarray(x, dtype=numpy.float64)
+        c_arr = numpy.ascontiguousarray(c, dtype=numpy.float64)
+        derivative = numpy.empty_like(x_arr)
 
-        return _fast_ww_dfun(x, c, float(local_coupling),
-                             float(self.a_e[0]), float(self.b_e[0]), float(self.d_e[0]),
-                             float(self.gamma_e[0]), float(self.tau_e[0]), float(self.w_p[0]),
-                             float(self.W_e[0]), float(self.J_N[0]), float(self.a_i[0]),
-                             float(self.b_i[0]), float(self.d_i[0]), float(self.gamma_i[0]),
-                             float(self.tau_i[0]), float(self.W_i[0]), float(self.J_i[0]),
-                             float(self.G[0]), float(self.lamda[0]), float(self.I_o[0]),
-                             float(self.I_ext[0]), self._deriv_buffer)
-
-
+        return _fast_ww_dfun(
+            x_arr, c_arr, float(local_coupling),
+            numpy.ascontiguousarray(self.a_e, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.b_e, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.d_e, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.gamma_e, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.tau_e, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.w_p, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.W_e, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.J_N, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.a_i, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.b_i, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.d_i, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.gamma_i, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.tau_i, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.W_i, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.J_i, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.G, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.lamda, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.I_o, dtype=numpy.float64).ravel(),
+            numpy.ascontiguousarray(self.I_ext, dtype=numpy.float64).ravel(),
+            derivative
+        )
 @guvectorize([(float64[:],)*23], '(n),(m)' + ',()'*20 + '->(n)', nopython=True)
 def _numba_dfun_bei(S, c, mi, ae, be, de, ge, te, wp, we, jn, ai, bi, di, gi, ti, wi, ji, g, l, io, ie, dx):
     """Gufunc for transcriptional model presented in Deco et Al 2020, Dynamical consequences of regional heterogeneity in the
